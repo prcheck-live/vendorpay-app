@@ -4,8 +4,8 @@
 name: Deploy to QE
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # Cloud version. The local-machine setup uses qe-local.yml on a self-hosted runner instead;
+  # re-enable the triggers below when you move QE to a hosted environment.
   workflow_dispatch:
 
 permissions:
