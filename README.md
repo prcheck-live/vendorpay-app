@@ -1,6 +1,6 @@
 # VendorPay
 
-VendorPay is a small supplier-payments app. It is the **reference application for QIVVRA**, a platform that checks whether a code change is ready to ship. This branch, `feature/VP-184-bank-change` (PR #482), adds the bank-change feature (VP-184) on top of `main`. It contains two deliberate defects for QIVVRA to find; see `docs/pr-482-demo.md`.
+VendorPay is a small supplier-payments app. It is the **reference application for QIVVRA**, a platform that checks whether a code change is ready to ship. This branch, `feature/VP-184-bank-change` (PR #482), adds the bank-change feature (VP-184) on top of `main`. Commit 1 contains two deliberate defects for QIVVRA to find; commit 2 fixes only the first; see `docs/pr-482-demo.md`.
 
 It is a real, runnable app with a TypeScript API, a simple web UI, a PostgreSQL database with seeded data, Docker, CI and a team Playwright test suite. Every story, test and commit carries a Jira key.
 
@@ -82,7 +82,7 @@ Wrong role → 403 `FORBIDDEN_ROLE`.
 
 ## Tests
 
-The team suite is in `tests/` (25 tests: `api` and `ui` projects). Each test title starts with the Jira key it covers.
+The team suite is in `tests/` (26 tests: `api` and `ui` projects). Each test title starts with the Jira key it covers.
 
 ```bash
 npm test                                  # starts the app itself

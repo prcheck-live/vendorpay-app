@@ -216,7 +216,7 @@ function changesTable(requests, withSupplier) {
       <td class="mono">${esc(r.previousAccount.account)} <span class="arrow">→</span> ${esc(r.newAccount.account)}</td>
       <td>${esc(r.reason)}</td><td>${esc(r.requestedBy)}</td>
       <td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td>${esc(r.decidedBy || '—')}</td>
-      <td>${r.status === 'requested' && can('FINANCE_APPROVER') ? `<button class="primary" data-approve="${esc(r.id)}">Approve</button> <button data-reject="${esc(r.id)}">Reject</button>` : ''}</td></tr>`).join('')}
+      <td>${r.status === 'requested' && can('FINANCE_APPROVER') && r.requestedBy === session.user.username ? '<span class="muted">Needs another approver</span>' : ''}${r.status === 'requested' && can('FINANCE_APPROVER') && r.requestedBy !== session.user.username ? `<button class="primary" data-approve="${esc(r.id)}">Approve</button> <button data-reject="${esc(r.id)}">Reject</button>` : ''}</td></tr>`).join('')}
     </tbody></table>`;
 }
 function bindChangeForm(supplierId, refresh) {

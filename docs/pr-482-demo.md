@@ -29,7 +29,7 @@ ID=$(curl -s localhost:3000/api/suppliers/SUP-0192/bank-change-requests \
 curl -s -X POST localhost:3000/api/bank-change-requests/$ID/approve -H "authorization: Bearer $T" | jq .request
 ```
 
-Expected after the fix (commit 2): 403 `SELF_APPROVAL_NOT_ALLOWED`.
+Fixed in commit 2: the same call now returns 403 `SELF_APPROVAL_NOT_ALLOWED`, and the UI shows "Needs another approver" instead of the Approve button.
 
 ## Defect 2: scheduled payments still go to the old account
 
@@ -56,6 +56,17 @@ In the UI: sign in as `m.fernandes`, open **Suppliers → Northstar Components**
 | QE runs this commit | `/version` | SUPPORTED |
 
 Disposition: **NOT READY**.
+
+## Commit 2: "VP-184: block self-approval of bank changes"
+
+The QIVVRA prototype calls this commit **c41d9e2**. The team fixed defect 1 and added a test for it (26/26 pass). Defect 2 is untouched: when j.thomas approves m.fernandes's change, PAY-7821 still goes to the inactive `**** 4421`.
+
+| Obligation | Commit 1 | Commit 2 |
+|---|---|---|
+| Bank change approved by a different person (FIN-001) | VIOLATED | SUPPORTED |
+| Scheduled payments to the old account held for review (FIN-002) | INSUFFICIENT | INSUFFICIENT |
+| Masking, audit trail, inactive until approved | SUPPORTED | SUPPORTED |
+| Disposition | NOT READY | NOT READY, or READY WITH EXCEPTIONS if the FIN-002 owner (Finance) grants a time-boxed exception |
 
 ## Reset the demo data
 

@@ -80,6 +80,7 @@ Also note criterion 2 does not say the approver must be a different person from 
 | VP-184 Procurement submits a new bank account for an active supplier | VP-184 |
 | VP-184 the new account stays inactive until a Finance Approver approves it | VP-184 |
 | VP-184 Procurement cannot approve a bank change | VP-184 |
+| VP-184 the requester cannot approve their own bank change | VP-184 |
 | VP-184 the new account number is masked in API responses | VP-184 |
 | VP-184 the request and the approval are recorded in the audit trail | VP-184 |
 | VP-185 onboarding, verification and scheduling are recorded with the actor | VP-185 |

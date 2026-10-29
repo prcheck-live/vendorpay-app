@@ -43,6 +43,17 @@ test.describe('VP-184 Supplier bank account change', () => {
     expect(res.status()).toBe(403);
   });
 
+  test('VP-184 the requester cannot approve their own bank change', async ({ request }) => {
+    const supplier = await activeSupplier(request, 'Test Bank Change Self');
+    const approver = await tokenFor(request, 'm.fernandes');
+    const { request: change } = await (await request.post(`/api/suppliers/${supplier.id}/bank-change-requests`, {
+      headers: auth(approver), data: { accountNumber: accountNumber(), ifsc: 'ICIC0000110', reason: 'Supplier called Finance directly' },
+    })).json();
+    const res = await request.post(`/api/bank-change-requests/${change.id}/approve`, { headers: auth(approver) });
+    expect(res.status()).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'SELF_APPROVAL_NOT_ALLOWED' });
+  });
+
   test('VP-184 the new account number is masked in API responses', async ({ request }) => {
     const supplier = await activeSupplier(request, 'Test Bank Change AC3');
     const procurement = await tokenFor(request, 'ravi.kumar');

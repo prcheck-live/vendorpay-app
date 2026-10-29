@@ -20,8 +20,9 @@
    - **Defect 2 (intentional, from the silent story):** payments already scheduled to the old account (PAY-7821) are left pointing at it, with no review or notice.
    - Team tests cover all four written acceptance criteria and pass (25/25). See `pr-482-demo.md`.
 
-2. **Commit 2 (next; the QIVVRA prototype calls it c41d9e2)** "VP-184: block self-approval of bank changes"
-   - Approval by the requester returns 403 `SELF_APPROVAL_NOT_ALLOWED`.
+2. **Commit 2 (built; the QIVVRA prototype calls it c41d9e2)** "VP-184: block self-approval of bank changes"
+   - Approval by the requester returns 403 `SELF_APPROVAL_NOT_ALLOWED`; the UI hides Approve on your own request.
+   - New team test: "VP-184 the requester cannot approve their own bank change" (26/26 pass).
    - Scheduled payments are still unaddressed, so QIVVRA should move from NOT READY (violated rule) to READY WITH EXCEPTIONS or NOT READY (insufficient evidence on scheduled payments), depending on the policy owner's decision.
 
 ## Policy rules this PR exercises

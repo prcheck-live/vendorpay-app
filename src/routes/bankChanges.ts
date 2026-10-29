@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate, requireRole } from '../auth';
 import { recordAudit } from '../audit';
 import { pool, withTransaction } from '../db/pool';
-import { badRequest, conflict, handle, notFound } from '../errors';
+import { badRequest, conflict, handle, HttpError, notFound } from '../errors';
 import { log } from '../logger';
 import { maskAccount } from '../mask';
 
@@ -101,6 +101,8 @@ bankChangesRouter.post('/bank-change-requests/:id/approve', authenticate, requir
     if (!r.rowCount) throw notFound(`Bank change request ${req.params.id}`);
     const change = r.rows[0];
     if (change.status !== 'requested') throw conflict('ALREADY_DECIDED', `This request is already ${change.status}`);
+    // Maker-checker: whoever requested the change can never approve it.
+    if (change.requested_by === actor) throw new HttpError(403, 'SELF_APPROVAL_NOT_ALLOWED', 'The person who requested a bank change cannot approve it');
 
     await c.query("UPDATE supplier_bank_accounts SET status = 'inactive' WHERE id = $1", [change.previous_account_id]);
     await c.query("UPDATE supplier_bank_accounts SET status = 'active', verified_by = $1, verified_at = now() WHERE id = $2", [actor, change.new_account_id]);
