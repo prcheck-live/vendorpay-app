@@ -1,0 +1,58 @@
+# Builds an image for the PR's exact commit, deploys it to the QE environment and
+# records a GitHub deployment. QIVVRA reads that deployment record (and /version)
+# to confirm the QE environment runs the commit it is about to assure.
+name: Deploy to QE
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  deployments: write
+
+concurrency:
+  group: qe-environment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: qe
+      url: ${{ vars.QE_BASE_URL }}
+    env:
+      SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      IMAGE: ghcr.io/${{ github.repository_owner }}/vendorpay
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push image tagged with the commit
+        run: |
+          SHORT=${SHA::7}
+          docker build --build-arg GIT_SHA=$SHORT --build-arg BUILT_AT=$(date -u +%FT%TZ) -t $IMAGE:$SHORT .
+          docker push $IMAGE:$SHORT
+          echo "SHORT=$SHORT" >> $GITHUB_ENV
+      - name: Deploy to QE
+        # Replace with your platform's deploy command (SSH + docker compose, Kubernetes, Render, Railway...).
+        # The QE host must run image $IMAGE:$SHORT with GIT_SHA=$SHORT.
+        run: |
+          echo "Deploying $IMAGE:$SHORT to QE"
+          test -n "${{ secrets.QE_DEPLOY_HOOK }}" && curl -fsS -X POST "${{ secrets.QE_DEPLOY_HOOK }}" -d "image=$IMAGE:$SHORT" || echo "QE_DEPLOY_HOOK not set: skipping remote deploy"
+      - name: Confirm QE runs this commit
+        if: ${{ vars.QE_BASE_URL != '' }}
+        run: |
+          for i in $(seq 1 30); do
+            DEPLOYED=$(curl -fsS "${{ vars.QE_BASE_URL }}/version" | jq -r .gitSha) || true
+            [ "$DEPLOYED" = "$SHORT" ] && echo "QE is running $SHORT" && exit 0
+            sleep 10
+          done
+          echo "QE did not report $SHORT" && exit 1

@@ -1,0 +1,21 @@
+Test Summary,Test Type,Covers,Definition
+VP-170 a demo user can sign in and read their own profile,Generic,VP-170,tests/api/auth.spec.ts
+VP-170 a wrong password is rejected without saying which field was wrong,Generic,VP-170,tests/api/auth.spec.ts
+VP-170 API calls without a token are refused,Generic,VP-170,tests/api/auth.spec.ts
+VP-170 the build reports its commit for environment checks,Generic,VP-170,tests/api/auth.spec.ts
+VP-181 Procurement onboards a supplier whose bank account waits for verification,Generic,VP-181,tests/api/suppliers.spec.ts
+VP-181 Finance Ops cannot onboard suppliers,Generic,VP-181,tests/api/suppliers.spec.ts
+VP-181 an invalid IFSC code is rejected with a field message,Generic,VP-181,tests/api/suppliers.spec.ts
+VP-181 a Finance Approver verifies the account and the supplier becomes active,Generic,VP-181,tests/api/suppliers.spec.ts
+VP-182 supplier responses show only the last four digits of the account,Generic,VP-182,tests/api/suppliers.spec.ts
+VP-182 the supplier list never contains a full account number,Generic,VP-182,tests/api/suppliers.spec.ts
+VP-182 a Finance Ops user signs in and sees suppliers with masked accounts,Generic,VP-182,tests/ui/signin.spec.ts
+VP-183 Finance Ops schedules a payment to the supplier's active account,Generic,VP-183,tests/api/payments.spec.ts
+VP-183 payments cannot be scheduled for a supplier awaiting verification,Generic,VP-183,tests/api/payments.spec.ts
+VP-183 Procurement cannot schedule payments,Generic,VP-183,tests/api/payments.spec.ts
+VP-183 a past date is rejected,Generic,VP-183,tests/api/payments.spec.ts
+VP-183 a Finance Approver releases a scheduled payment once,Generic,VP-183,tests/api/payments.spec.ts
+VP-183 Finance Ops cannot release payments,Generic,VP-183,tests/api/payments.spec.ts
+VP-185 onboarding, verification and scheduling are recorded with the actor,Generic,VP-185,tests/api/audit.spec.ts
+VP-185 audit details never contain a full account number,Generic,VP-185,tests/api/audit.spec.ts
+VP-185 Finance Ops cannot read the audit trail,Generic,VP-185,tests/api/audit.spec.ts

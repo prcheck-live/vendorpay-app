@@ -1,0 +1,49 @@
+# Team CI: type-check, build, and run the team's Playwright suite against PostgreSQL.
+# The JUnit report is uploaded so it can be imported into Jira Xray.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vendorpay
+          POSTGRES_PASSWORD: vendorpay
+          POSTGRES_DB: vendorpay
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vendorpay" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://vendorpay:vendorpay@localhost:5432/vendorpay
+      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run db:migrate && npm run db:seed
+      - run: npx playwright install --with-deps chromium
+      - name: Start VendorPay
+        run: |
+          nohup node dist/server.js > server.log 2>&1 &
+          npx --yes wait-on http://localhost:3000/health
+      - name: Team Playwright tests
+        run: BASE_URL=http://localhost:3000 npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: team-test-results
+          path: |
+            test-results/
+            server.log

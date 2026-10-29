@@ -1,0 +1,37 @@
+# Local and QE environment: VendorPay + PostgreSQL.
+#   GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vendorpay
+      POSTGRES_PASSWORD: vendorpay
+      POSTGRES_DB: vendorpay
+    ports: ["5432:5432"]
+    volumes: [vendorpay-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vendorpay"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
+        BUILT_AT: ${BUILT_AT:-local}
+    environment:
+      DATABASE_URL: postgres://vendorpay:vendorpay@db:5432/vendorpay
+      TOKEN_SECRET: ${TOKEN_SECRET:-change-me-for-shared-environments}
+      APP_ENV: ${APP_ENV:-qe}
+      SEED_ON_START: "true"
+    ports: ["3000:3000"]
+    # Logs are written to a volume so QIVVRA's log-exposure verifier can scan them.
+    volumes: [vendorpay-logs:/app/logs]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  vendorpay-db:
+  vendorpay-logs:
