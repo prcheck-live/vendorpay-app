@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VendorPay</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="signin" class="signin" hidden>
+    <form id="signin-form" class="card signin-card" novalidate>
+      <div class="logo">VendorPay</div>
+      <p class="muted">Supplier payments for Finance Operations</p>
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <p id="signin-error" class="error" role="alert"></p>
+      <button type="submit" class="primary" data-testid="signin-submit">Sign in</button>
+      <details class="demo">
+        <summary>Demo accounts</summary>
+        <p>Password for all: <code>VendorPay@2026</code></p>
+        <ul>
+          <li><code>neha.joshi</code>, <code>priya.menon</code>: Finance Ops</li>
+          <li><code>m.fernandes</code>, <code>j.thomas</code>: Finance Approver</li>
+          <li><code>ravi.kumar</code>: Procurement</li>
+          <li><code>audit.viewer</code>: Auditor</li>
+        </ul>
+      </details>
+    </form>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <header class="top">
+      <div class="logo">VendorPay</div>
+      <nav id="nav" aria-label="Main">
+        <a href="#suppliers" data-view="suppliers">Suppliers</a>
+        <a href="#payments" data-view="payments">Payments</a>
+        <a href="#audit" data-view="audit" data-roles="AUDITOR FINANCE_APPROVER">Audit trail</a>
+      </nav>
+      <div class="me">
+        <span id="me-name"></span>
+        <span id="me-role" class="pill"></span>
+        <button id="signout" class="link">Sign out</button>
+      </div>
+    </header>
+    <main id="view" class="view" tabindex="-1"></main>
+    <footer class="foot"><span id="build"></span></footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
