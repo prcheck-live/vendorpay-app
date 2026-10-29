@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { accountNumber, activeSupplier, auth, tokenFor } from '../support/api';
+import { APIRequestContext } from '@playwright/test';
+import { accountNumber, activeSupplier, auth, daysFromNow, tokenFor } from '../support/api';
 
 // Team tests for VP-184, one or more per written acceptance criterion.
 test.describe('VP-184 Supplier bank account change', () => {
@@ -81,5 +82,62 @@ test.describe('VP-184 Supplier bank account change', () => {
     const types = events.map((e: { type: string; actor: string }) => `${e.type}:${e.actor}`);
     expect(types).toContain('BANK_CHANGE_REQUESTED:ravi.kumar');
     expect(types).toContain('BANK_CHANGE_APPROVED:m.fernandes');
+  });
+
+  // AC5: payments already scheduled to the old account are held for Finance review.
+  async function changeWithScheduledPayment(request: APIRequestContext, name: string) {
+    const supplier = await activeSupplier(request, name);
+    const ops = await tokenFor(request, 'neha.joshi');
+    const procurement = await tokenFor(request, 'ravi.kumar');
+    const approver = await tokenFor(request, 'm.fernandes');
+    const { payment } = await (await request.post('/api/payments', {
+      headers: auth(ops), data: { supplierId: supplier.id, amount: 125000, scheduledFor: daysFromNow(7) },
+    })).json();
+    const { request: change } = await (await request.post(`/api/suppliers/${supplier.id}/bank-change-requests`, {
+      headers: auth(procurement), data: { accountNumber: accountNumber(), ifsc: 'ICIC0000110', reason: 'Supplier moved to ICICI' },
+    })).json();
+    const approved = await request.post(`/api/bank-change-requests/${change.id}/approve`, { headers: auth(approver) });
+    expect(approved.status()).toBe(200);
+    return { supplier, payment, change, approvedBody: await approved.json() };
+  }
+
+  test('VP-184 approving a bank change puts payments scheduled to the old account on hold', async ({ request }) => {
+    const { payment, change, approvedBody } = await changeWithScheduledPayment(request, 'Test Bank Change Hold');
+    expect(approvedBody.heldPayments).toEqual([payment.id]);
+    const approver = await tokenFor(request, 'j.thomas');
+    const held = (await (await request.get(`/api/payments/${payment.id}`, { headers: auth(approver) })).json()).payment;
+    expect(held).toMatchObject({ status: 'on_hold', destination: { accountId: change.previousAccount.id }, hold: { bankChangeRequestId: change.id } });
+    const release = await request.post(`/api/payments/${payment.id}/release`, { headers: auth(approver) });
+    expect(release.status()).toBe(409);
+    expect(await release.json()).toMatchObject({ error: 'PAYMENT_ON_HOLD' });
+  });
+
+  test('VP-184 Finance redirects a held payment to the new account and it is audited', async ({ request }) => {
+    const { payment, change } = await changeWithScheduledPayment(request, 'Test Bank Change Redirect');
+    const approver = await tokenFor(request, 'j.thomas');
+    const res = await request.post(`/api/payments/${payment.id}/resolve-hold`, { headers: auth(approver), data: { action: 'redirect' } });
+    expect(res.status()).toBe(200);
+    expect((await res.json()).payment).toMatchObject({
+      status: 'scheduled', destination: { accountId: change.newAccount.id }, hold: { resolution: 'redirected', resolvedBy: 'j.thomas' },
+    });
+    const { events } = await (await request.get(`/api/audit-events?entityId=${payment.id}`, { headers: auth(approver) })).json();
+    expect(events.map((e: { type: string }) => e.type)).toEqual(expect.arrayContaining(['PAYMENT_HELD', 'PAYMENT_HOLD_RESOLVED']));
+  });
+
+  test('VP-184 the bank change requester cannot decide its held payments', async ({ request }) => {
+    const supplier = await activeSupplier(request, 'Test Bank Change Self Resolve');
+    const ops = await tokenFor(request, 'neha.joshi');
+    const requester = await tokenFor(request, 'm.fernandes');
+    const approver = await tokenFor(request, 'j.thomas');
+    const { payment } = await (await request.post('/api/payments', {
+      headers: auth(ops), data: { supplierId: supplier.id, amount: 5000, scheduledFor: daysFromNow(3) },
+    })).json();
+    const { request: change } = await (await request.post(`/api/suppliers/${supplier.id}/bank-change-requests`, {
+      headers: auth(requester), data: { accountNumber: accountNumber(), ifsc: 'ICIC0000110', reason: 'Supplier called Finance directly' },
+    })).json();
+    await request.post(`/api/bank-change-requests/${change.id}/approve`, { headers: auth(approver) });
+    const res = await request.post(`/api/payments/${payment.id}/resolve-hold`, { headers: auth(requester), data: { action: 'redirect' } });
+    expect(res.status()).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'SELF_RESOLUTION_NOT_ALLOWED' });
   });
 });

@@ -136,7 +136,7 @@ async function viewSupplier(id) {
           <dt>Added by</dt><dd>${esc(a.createdBy)}</dd><dt>Verified by</dt><dd>${esc(a.verifiedBy || '—')}</dd></dl>
           ${a.status === 'pending' && can('FINANCE_APPROVER') ? `<p><button class="primary" data-verify="${a.id}">Verify bank account</button></p>` : ''}`).join('<hr>')}
       </div>
-      <div class="card"><h3>Payments</h3><dl class="kv"><dt>Scheduled</dt><dd>${s.payments.scheduled}</dd><dt>Released</dt><dd>${s.payments.released}</dd></dl></div>
+      <div class="card"><h3>Payments</h3><dl class="kv"><dt>Scheduled</dt><dd>${s.payments.scheduled}</dd><dt>Released</dt><dd>${s.payments.released}</dd><dt>On hold</dt><dd>${s.payments.on_hold}</dd></dl></div>
     </div>
     <div class="card"><h3>Bank account changes</h3>
       ${requests.length ? changesTable(requests, false) : '<p class="muted">No bank account changes yet.</p>'}
@@ -166,11 +166,18 @@ function paymentsTable(payments) {
     <tbody>${payments.map((p) => `<tr>
       <td class="mono">${esc(p.id)}</td><td>${esc(p.supplierName)}</td><td>${esc(p.currency)} ${esc(p.amount)}</td>
       <td class="mono">${esc(p.destination.account)}</td><td>${esc(p.scheduledFor)}</td>
-      <td><span class="pill ${esc(p.status)}">${esc(p.status)}</span></td>
-      <td>${p.status === 'scheduled' && can('FINANCE_APPROVER') ? `<button data-release="${esc(p.id)}">Release</button>` : ''}</td></tr>`).join('')}
+      <td><span class="pill ${esc(p.status)}">${esc(p.status.replace('_', ' '))}</span>${p.status === 'on_hold' ? `<div class="hold-reason">${esc(p.hold.reason)}</div>` : ''}${p.hold && p.hold.resolution ? `<div class="hold-reason">${esc(p.hold.resolution)} by ${esc(p.hold.resolvedBy)}</div>` : ''}</td>
+      <td>${p.status === 'scheduled' && can('FINANCE_APPROVER') ? `<button data-release="${esc(p.id)}">Release</button>` : ''}${p.status === 'on_hold' && can('FINANCE_APPROVER') ? `<button class="primary" data-resolve="${esc(p.id)}" data-action="redirect">Pay new account</button> <button data-resolve="${esc(p.id)}" data-action="cancel">Cancel</button>` : ''}</td></tr>`).join('')}
     </tbody></table>`;
 }
 function bindRelease(refresh) {
+  document.querySelectorAll('[data-resolve]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      const { payment } = await api(`/api/payments/${b.dataset.resolve}/resolve-hold`, { method: 'POST', body: { action: b.dataset.action } });
+      toast(b.dataset.action === 'redirect' ? `${payment.id} will now go to ${payment.destination.account}.` : `${payment.id} cancelled.`);
+      refresh();
+    } catch (err) { toast(err.message); }
+  }));
   document.querySelectorAll('[data-release]').forEach((b) => b.addEventListener('click', async () => {
     try { await api(`/api/payments/${b.dataset.release}/release`, { method: 'POST' }); toast(`${b.dataset.release} released.`); refresh(); }
     catch (err) { toast(err.message); }
@@ -180,7 +187,7 @@ async function viewPayments() {
   const [{ payments }, { suppliers }] = await Promise.all([api('/api/payments'), api('/api/suppliers')]);
   const active = suppliers.filter((s) => s.status === 'active');
   $('#view').innerHTML = `
-    <div class="head"><div><h1>Payments</h1><p class="muted">A payment always goes to the bank account that was active when it was scheduled.</p></div></div>
+    <div class="head"><div><h1>Payments</h1><p class="muted">A payment goes to the bank account that was active when it was scheduled. If that account is replaced, the payment is held for Finance to decide.</p></div></div>
     ${can('FINANCE_OPS') ? `
     <form id="payment-form" class="card form" novalidate>
       <div><label for="p-supplier">Supplier</label><select id="p-supplier" name="supplierId">${active.map((s) => `<option value="${esc(s.id)}">${esc(s.name)} (${esc(s.bankAccount.account)})</option>`).join('')}</select><div class="field-error" data-for="supplierId"></div></div>
@@ -239,7 +246,7 @@ function bindChangeForm(supplierId, refresh) {
 }
 function bindDecisions(refresh) {
   document.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
-    try { const { request } = await api(`/api/bank-change-requests/${b.dataset.approve}/approve`, { method: 'POST' }); toast(`${request.id} approved. ${request.newAccount.account} is now the active account.`); refresh(); }
+    try { const { request, heldPayments } = await api(`/api/bank-change-requests/${b.dataset.approve}/approve`, { method: 'POST' }); toast(`${request.id} approved. ${request.newAccount.account} is now active.${heldPayments.length ? ` ${heldPayments.join(', ')} put on hold for Finance review.` : ''}`); refresh(); }
     catch (err) { toast(err.message); }
   }));
   document.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', async () => {

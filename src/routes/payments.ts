@@ -31,6 +31,8 @@ const view = (p: any) => ({
   createdAt: p.created_at,
   releasedBy: p.released_by,
   releasedAt: p.released_at,
+  hold: p.held_at ? { reason: p.hold_reason, bankChangeRequestId: p.hold_ref, heldAt: p.held_at,
+    resolution: p.resolution, resolvedBy: p.resolved_by, resolvedAt: p.resolved_at } : null,
 });
 
 paymentsRouter.get('/', handle(async (req, res) => {
@@ -85,12 +87,52 @@ paymentsRouter.post('/:id/release', requireRole('FINANCE_APPROVER'), handle(asyn
   await withTransaction(async (c) => {
     const p = await c.query('SELECT id, status, created_by FROM payments WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (!p.rowCount) throw notFound(`Payment ${req.params.id}`);
+    if (p.rows[0].status === 'on_hold') throw conflict('PAYMENT_ON_HOLD', 'This payment is on hold because the supplier changed bank account. Resolve the hold first.');
+    if (p.rows[0].status === 'cancelled') throw conflict('PAYMENT_CANCELLED', 'This payment was cancelled');
     if (p.rows[0].status !== 'scheduled') throw conflict('ALREADY_RELEASED', 'This payment has already been released');
     if (p.rows[0].created_by === actor) throw new HttpError(403, 'SELF_RELEASE_NOT_ALLOWED', 'The person who scheduled a payment cannot release it');
     await c.query("UPDATE payments SET status = 'released', released_by = $1, released_at = now() WHERE id = $2", [actor, req.params.id]);
     await recordAudit(c, { type: 'PAYMENT_RELEASED', actor, entityType: 'payment', entityId: req.params.id });
   });
   log('info', 'payment released', { paymentId: req.params.id, actor });
+  const r = await pool.query(`${SELECT_PAYMENTS} WHERE p.id = $1`, [req.params.id]);
+  res.json({ payment: view(r.rows[0]) });
+}));
+
+/**
+ * VP-184 AC5: a Finance Approver decides each held payment: redirect it to the supplier's
+ * current active account, or cancel it. The person who requested the bank change cannot decide.
+ */
+paymentsRouter.post('/:id/resolve-hold', requireRole('FINANCE_APPROVER'), handle(async (req, res) => {
+  const action = req.body?.action;
+  if (action !== 'redirect' && action !== 'cancel') throw badRequest('VALIDATION_FAILED', 'Check the highlighted fields', { action: 'Choose redirect or cancel' });
+  const actor = req.user!.username;
+  await withTransaction(async (c) => {
+    const p = await c.query(
+      `SELECT p.*, r.requested_by AS change_requested_by, a.account_number AS old_number
+       FROM payments p LEFT JOIN bank_change_requests r ON r.id = p.hold_ref
+       JOIN supplier_bank_accounts a ON a.id = p.destination_account_id
+       WHERE p.id = $1 FOR UPDATE OF p`, [req.params.id]);
+    if (!p.rowCount) throw notFound(`Payment ${req.params.id}`);
+    const pay = p.rows[0];
+    if (pay.status !== 'on_hold') throw conflict('NOT_ON_HOLD', 'This payment is not on hold');
+    if (pay.change_requested_by === actor) throw new HttpError(403, 'SELF_RESOLUTION_NOT_ALLOWED', 'The person who requested the bank change cannot decide its held payments');
+
+    if (action === 'cancel') {
+      await c.query("UPDATE payments SET status = 'cancelled', resolution = 'cancelled', resolved_by = $1, resolved_at = now() WHERE id = $2", [actor, pay.id]);
+      await recordAudit(c, { type: 'PAYMENT_HOLD_RESOLVED', actor, entityType: 'payment', entityId: pay.id,
+        details: { resolution: 'cancelled', requestId: pay.hold_ref } });
+      return;
+    }
+    const acct = await c.query("SELECT id, account_number FROM supplier_bank_accounts WHERE supplier_id = $1 AND status = 'active'", [pay.supplier_id]);
+    if (!acct.rowCount) throw conflict('SUPPLIER_NOT_ACTIVE', 'The supplier has no active bank account to redirect to');
+    await c.query(
+      "UPDATE payments SET status = 'scheduled', destination_account_id = $1, resolution = 'redirected', resolved_by = $2, resolved_at = now() WHERE id = $3",
+      [acct.rows[0].id, actor, pay.id]);
+    await recordAudit(c, { type: 'PAYMENT_HOLD_RESOLVED', actor, entityType: 'payment', entityId: pay.id,
+      details: { resolution: 'redirected', requestId: pay.hold_ref, from: maskAccount(pay.old_number), to: maskAccount(acct.rows[0].account_number) } });
+  });
+  log('info', 'payment hold resolved', { paymentId: req.params.id, action, actor });
   const r = await pool.query(`${SELECT_PAYMENTS} WHERE p.id = $1`, [req.params.id]);
   res.json({ payment: view(r.rows[0]) });
 }));

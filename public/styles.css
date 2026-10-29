@@ -63,3 +63,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .change .arrow { color: var(--muted); }
 #change-form { margin-top: 18px; }
 .card + .tbl, .card + .card { margin-top: 20px; }
+.pill.on_hold { background: #fdecec; color: #b42318; }
+.pill.cancelled { background: #eef0f4; color: var(--muted); text-decoration: line-through; }
+.hold-reason { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.grid > .card { margin-top: 0; }
+.tbl td.mono { white-space: nowrap; }

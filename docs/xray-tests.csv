@@ -22,6 +22,9 @@ VP-184 Procurement cannot approve a bank change,Generic,VP-184,tests/api/bank-ch
 VP-184 the requester cannot approve their own bank change,Generic,VP-184,tests/api/bank-change.spec.ts
 VP-184 the new account number is masked in API responses,Generic,VP-184,tests/api/bank-change.spec.ts
 VP-184 the request and the approval are recorded in the audit trail,Generic,VP-184,tests/api/bank-change.spec.ts
+VP-184 approving a bank change puts payments scheduled to the old account on hold,Generic,VP-184,tests/api/bank-change.spec.ts
+VP-184 Finance redirects a held payment to the new account and it is audited,Generic,VP-184,tests/api/bank-change.spec.ts
+VP-184 the bank change requester cannot decide its held payments,Generic,VP-184,tests/api/bank-change.spec.ts
 VP-185 onboarding, verification and scheduling are recorded with the actor,Generic,VP-185,tests/api/audit.spec.ts
 VP-185 audit details never contain a full account number,Generic,VP-185,tests/api/audit.spec.ts
 VP-185 Finance Ops cannot read the audit trail,Generic,VP-185,tests/api/audit.spec.ts

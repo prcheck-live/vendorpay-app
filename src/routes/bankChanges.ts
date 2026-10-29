@@ -96,6 +96,7 @@ bankChangesRouter.post('/suppliers/:id/bank-change-requests', authenticate, requ
 /** AC2: a Finance Approver approves the change; the new account becomes active. */
 bankChangesRouter.post('/bank-change-requests/:id/approve', authenticate, requireRole('FINANCE_APPROVER'), handle(async (req, res) => {
   const actor = req.user!.username;
+  let heldPayments: string[] = [];
   await withTransaction(async (c) => {
     const r = await c.query('SELECT * FROM bank_change_requests WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (!r.rowCount) throw notFound(`Bank change request ${req.params.id}`);
@@ -111,9 +112,21 @@ bankChangesRouter.post('/bank-change-requests/:id/approve', authenticate, requir
     const num = (id: number) => accts.rows.find((a) => a.id === id).account_number;
     await recordAudit(c, { type: 'BANK_CHANGE_APPROVED', actor, entityType: 'supplier', entityId: change.supplier_id,
       details: { requestId: change.id, from: maskAccount(num(change.previous_account_id)), to: maskAccount(num(change.new_account_id)) } });
+
+    // AC5 / FIN-002: payments still scheduled to the old account are held for Finance review,
+    // never paid to the old account and never silently redirected to the new one.
+    const held = await c.query(
+      `UPDATE payments SET status = 'on_hold', hold_reason = $1, hold_ref = $2, held_at = now()
+       WHERE supplier_id = $3 AND status = 'scheduled' AND destination_account_id = $4 RETURNING id`,
+      [`Supplier bank account changed (${change.id})`, change.id, change.supplier_id, change.previous_account_id]);
+    for (const p of held.rows) {
+      await recordAudit(c, { type: 'PAYMENT_HELD', actor, entityType: 'payment', entityId: p.id,
+        details: { requestId: change.id, destination: maskAccount(num(change.previous_account_id)) } });
+    }
+    heldPayments = held.rows.map((p) => p.id as string);
   });
-  log('info', 'bank change approved', { requestId: req.params.id, actor });
-  res.json({ request: await load(req.params.id) });
+  log('info', 'bank change approved', { requestId: req.params.id, actor, heldPayments: heldPayments.length });
+  res.json({ request: await load(req.params.id), heldPayments });
 }));
 
 /** A Finance Approver rejects the change; the proposed account is retired and the old one stays active. */

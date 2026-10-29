@@ -12,7 +12,7 @@ Baseline platform: sign-in, roles, `/health`, `/version` and log masking.
 | VP-182 | Story | Done | Show bank account numbers masked everywhere |
 | VP-183 | Story | Done | Schedule and release supplier payments with separation of duties |
 | VP-185 | Story | Done | Record an audit trail of every change |
-| VP-184 | Story | In Review (PR #482) | Let Procurement change a supplier's bank account |
+| VP-184 | Story | In Review (PR #482, commit 3) | Let Procurement change a supplier's bank account |
 
 ## Done stories (on `main`)
 
@@ -46,15 +46,20 @@ As Finance, I want bank account numbers hidden so they cannot leak through scree
 ### VP-184 Let Procurement change a supplier's bank account
 As Procurement, I want to change a supplier's bank account when they move banks, so future payments reach them.
 
-Acceptance criteria as written by the team:
+Acceptance criteria as first written (PR #482 commits 1 and 2 were built against these):
 1. Procurement can submit a new bank account for an active supplier.
 2. The new account must be approved by a Finance Approver before it becomes active.
 3. The new account number is masked in the UI and API.
 4. The change is recorded in the audit trail.
 
-**Deliberately left silent (for the QIVVRA demo):** the story does not say what happens to payments already scheduled to the old account (for example PAY-7821, INR 8,50,000 due 2026-11-05). The policy repository has a rule for this; QIVVRA should flag the gap between the story and the policy.
+The story was silent on two things the policy repository requires:
+- FIN-001: the approver must be a different person from the requester. Commit 1 let one Finance Approver request and approve their own change. Commit 2 fixed it (`SELF_APPROVAL_NOT_ALLOWED`).
+- FIN-002: payments already scheduled to the old account must be held. Commits 1 and 2 left PAY-7821 (INR 8,50,000, due 2026-11-05) pointing at the replaced account.
 
-Also note criterion 2 does not say the approver must be a different person from the requester. The policy repository requires it. The first commit on PR #482 (8e7c4b1) allows self-approval; the fix (c41d9e2) returns `SELF_APPROVAL_NOT_ALLOWED`.
+Added by the product owner after QIVVRA reported FIN-002 VIOLATED on commit 2:
+5. When a bank change is approved, payments still scheduled to the old account are put on hold for Finance review. A Finance Approver who did not request the change redirects each held payment to the new account or cancels it. Held payments cannot be released.
+
+Commit 3 implements AC5.
 
 ## Xray tests (team suite)
 
@@ -83,6 +88,9 @@ Also note criterion 2 does not say the approver must be a different person from 
 | VP-184 the requester cannot approve their own bank change | VP-184 |
 | VP-184 the new account number is masked in API responses | VP-184 |
 | VP-184 the request and the approval are recorded in the audit trail | VP-184 |
+| VP-184 approving a bank change puts payments scheduled to the old account on hold | VP-184 |
+| VP-184 Finance redirects a held payment to the new account and it is audited | VP-184 |
+| VP-184 the bank change requester cannot decide its held payments | VP-184 |
 | VP-185 onboarding, verification and scheduling are recorded with the actor | VP-185 |
 | VP-185 audit details never contain a full account number | VP-185 |
 | VP-185 Finance Ops cannot read the audit trail | VP-185 |
