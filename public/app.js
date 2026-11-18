@@ -73,7 +73,7 @@ window.addEventListener('hashchange', () => session && route());
 function route() {
   const [view, id] = (location.hash.replace('#', '') || 'suppliers').split('/');
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.view === view || (view === 'supplier' && a.dataset.view === 'suppliers')));
-  const views = { suppliers: viewSuppliers, supplier: () => viewSupplier(id), payments: viewPayments, audit: viewAudit };
+  const views = { suppliers: viewSuppliers, supplier: () => viewSupplier(id), payments: viewPayments, changes: viewChanges, audit: viewAudit };
   (views[view] || viewSuppliers)().catch((err) => {
     $('#view').innerHTML = `<div class="card empty">${err.status === 403 ? 'Your role does not have access to this page.' : esc(err.message)}</div>`;
   });
@@ -119,7 +119,12 @@ async function viewSuppliers() {
 
 async function viewSupplier(id) {
   const { supplier: s } = await api(`/api/suppliers/${encodeURIComponent(id)}`);
-  const { payments } = await api(`/api/payments?supplierId=${encodeURIComponent(id)}`);
+  const [{ payments }, { requests }] = await Promise.all([
+    api(`/api/payments?supplierId=${encodeURIComponent(id)}`),
+    api(`/api/bank-change-requests?supplierId=${encodeURIComponent(id)}`),
+  ]);
+  const open = requests.find((r) => r.status === 'requested');
+  const canRequest = can('PROCUREMENT', 'FINANCE_APPROVER') && s.status === 'active' && !open;
   $('#view').innerHTML = `
     <div class="head"><div><a href="#suppliers" class="muted">← Suppliers</a><h1>${esc(s.name)}</h1><p class="muted mono">${esc(s.id)}</p></div>
       <span class="pill ${esc(s.status)}">${esc(s.status.replace('_', ' '))}</span></div>
@@ -131,9 +136,21 @@ async function viewSupplier(id) {
           <dt>Added by</dt><dd>${esc(a.createdBy)}</dd><dt>Verified by</dt><dd>${esc(a.verifiedBy || '—')}</dd></dl>
           ${a.status === 'pending' && can('FINANCE_APPROVER') ? `<p><button class="primary" data-verify="${a.id}">Verify bank account</button></p>` : ''}`).join('<hr>')}
       </div>
-      <div class="card"><h3>Payments</h3><dl class="kv"><dt>Scheduled</dt><dd>${s.payments.scheduled}</dd><dt>Released</dt><dd>${s.payments.released}</dd></dl></div>
+      <div class="card"><h3>Payments</h3><dl class="kv"><dt>Scheduled</dt><dd>${s.payments.scheduled}</dd><dt>Released</dt><dd>${s.payments.released}</dd><dt>On hold</dt><dd>${s.payments.on_hold}</dd></dl></div>
+    </div>
+    <div class="card"><h3>Bank account changes</h3>
+      ${requests.length ? changesTable(requests, false) : '<p class="muted">No bank account changes yet.</p>'}
+      ${canRequest ? `
+      <form id="change-form" class="form" novalidate>
+        <div><label for="c-acct">New bank account number</label><input id="c-acct" name="accountNumber" inputmode="numeric"><div class="field-error" data-for="accountNumber"></div></div>
+        <div><label for="c-ifsc">IFSC</label><input id="c-ifsc" name="ifsc" placeholder="HDFC0001234"><div class="field-error" data-for="ifsc"></div></div>
+        <div><label for="c-reason">Reason</label><input id="c-reason" name="reason" placeholder="Supplier moved banks"><div class="field-error" data-for="reason"></div></div>
+        <div class="actions"><button class="primary" type="submit">Request bank change</button></div>
+      </form>` : ''}
     </div>
     ${paymentsTable(payments)}`;
+  bindChangeForm(id, () => viewSupplier(id));
+  bindDecisions(() => viewSupplier(id));
   document.querySelectorAll('[data-verify]').forEach((b) => b.addEventListener('click', async () => {
     try { await api(`/api/suppliers/${encodeURIComponent(id)}/bank-accounts/${b.dataset.verify}/verify`, { method: 'POST' }); toast('Bank account verified. The supplier is now active.'); viewSupplier(id); }
     catch (err) { toast(err.message); }
@@ -149,11 +166,18 @@ function paymentsTable(payments) {
     <tbody>${payments.map((p) => `<tr>
       <td class="mono">${esc(p.id)}</td><td>${esc(p.supplierName)}</td><td>${esc(p.currency)} ${esc(p.amount)}</td>
       <td class="mono">${esc(p.destination.account)}</td><td>${esc(p.scheduledFor)}</td>
-      <td><span class="pill ${esc(p.status)}">${esc(p.status)}</span></td>
-      <td>${p.status === 'scheduled' && can('FINANCE_APPROVER') ? `<button data-release="${esc(p.id)}">Release</button>` : ''}</td></tr>`).join('')}
+      <td><span class="pill ${esc(p.status)}">${esc(p.status.replace('_', ' '))}</span>${p.status === 'on_hold' ? `<div class="hold-reason">${esc(p.hold.reason)}</div>` : ''}${p.hold && p.hold.resolution ? `<div class="hold-reason">${esc(p.hold.resolution)} by ${esc(p.hold.resolvedBy)}</div>` : ''}</td>
+      <td>${p.status === 'scheduled' && can('FINANCE_APPROVER') ? `<button data-release="${esc(p.id)}">Release</button>` : ''}${p.status === 'on_hold' && can('FINANCE_APPROVER') ? `<button class="primary" data-resolve="${esc(p.id)}" data-action="redirect">Pay new account</button> <button data-resolve="${esc(p.id)}" data-action="cancel">Cancel</button>` : ''}</td></tr>`).join('')}
     </tbody></table>`;
 }
 function bindRelease(refresh) {
+  document.querySelectorAll('[data-resolve]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      const { payment } = await api(`/api/payments/${b.dataset.resolve}/resolve-hold`, { method: 'POST', body: { action: b.dataset.action } });
+      toast(b.dataset.action === 'redirect' ? `${payment.id} will now go to ${payment.destination.account}.` : `${payment.id} cancelled.`);
+      refresh();
+    } catch (err) { toast(err.message); }
+  }));
   document.querySelectorAll('[data-release]').forEach((b) => b.addEventListener('click', async () => {
     try { await api(`/api/payments/${b.dataset.release}/release`, { method: 'POST' }); toast(`${b.dataset.release} released.`); refresh(); }
     catch (err) { toast(err.message); }
@@ -163,7 +187,7 @@ async function viewPayments() {
   const [{ payments }, { suppliers }] = await Promise.all([api('/api/payments'), api('/api/suppliers')]);
   const active = suppliers.filter((s) => s.status === 'active');
   $('#view').innerHTML = `
-    <div class="head"><div><h1>Payments</h1><p class="muted">A payment always goes to the bank account that was active when it was scheduled.</p></div></div>
+    <div class="head"><div><h1>Payments</h1><p class="muted">A payment goes to the bank account that was active when it was scheduled. If that account is replaced, the payment is held for Finance to decide.</p></div></div>
     ${can('FINANCE_OPS') ? `
     <form id="payment-form" class="card form" novalidate>
       <div><label for="p-supplier">Supplier</label><select id="p-supplier" name="supplierId">${active.map((s) => `<option value="${esc(s.id)}">${esc(s.name)} (${esc(s.bankAccount.account)})</option>`).join('')}</select><div class="field-error" data-for="supplierId"></div></div>
@@ -188,6 +212,57 @@ async function viewPayments() {
       if (!Object.keys(d).length) toast(err.message);
     }
   });
+}
+
+/* ---------- Bank account changes (VP-184) ---------- */
+function changesTable(requests, withSupplier) {
+  return `<table class="tbl" data-testid="changes-table">
+    <thead><tr><th>Request</th>${withSupplier ? '<th>Supplier</th>' : ''}<th>Change</th><th>Reason</th><th>Requested by</th><th>Status</th><th>Decided by</th><th></th></tr></thead>
+    <tbody>${requests.map((r) => `<tr>
+      <td class="mono">${esc(r.id)}</td>${withSupplier ? `<td><a href="#supplier/${esc(r.supplierId)}">${esc(r.supplierName)}</a></td>` : ''}
+      <td class="mono">${esc(r.previousAccount.account)} <span class="arrow">→</span> ${esc(r.newAccount.account)}</td>
+      <td>${esc(r.reason)}</td><td>${esc(r.requestedBy)}</td>
+      <td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td>${esc(r.decidedBy || '—')}</td>
+      <td>${r.status === 'requested' && can('FINANCE_APPROVER') && r.requestedBy === session.user.username ? '<span class="muted">Needs another approver</span>' : ''}${r.status === 'requested' && can('FINANCE_APPROVER') && r.requestedBy !== session.user.username ? `<button class="primary" data-approve="${esc(r.id)}">Approve</button> <button data-reject="${esc(r.id)}">Reject</button>` : ''}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+function bindChangeForm(supplierId, refresh) {
+  const form = $('#change-form');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(form));
+    form.querySelectorAll('.field-error').forEach((el) => { el.textContent = ''; });
+    try {
+      const { request } = await api(`/api/suppliers/${encodeURIComponent(supplierId)}/bank-change-requests`, { method: 'POST', body });
+      toast(`${request.id} submitted. A Finance Approver must approve it.`);
+      refresh();
+    } catch (err) {
+      const d = (err.data && err.data.details) || {};
+      Object.entries(d).forEach(([k, v]) => { const el = form.querySelector(`[data-for="${k}"]`); if (el) el.textContent = v; });
+      if (!Object.keys(d).length) toast(err.message);
+    }
+  });
+}
+function bindDecisions(refresh) {
+  document.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
+    try { const { request, heldPayments } = await api(`/api/bank-change-requests/${b.dataset.approve}/approve`, { method: 'POST' }); toast(`${request.id} approved. ${request.newAccount.account} is now active.${heldPayments.length ? ` ${heldPayments.join(', ')} put on hold for Finance review.` : ''}`); refresh(); }
+    catch (err) { toast(err.message); }
+  }));
+  document.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', async () => {
+    const note = prompt('Why is this change rejected?');
+    if (!note) return;
+    try { await api(`/api/bank-change-requests/${b.dataset.reject}/reject`, { method: 'POST', body: { note } }); toast(`${b.dataset.reject} rejected.`); refresh(); }
+    catch (err) { toast(err.message); }
+  }));
+}
+async function viewChanges() {
+  const { requests } = await api('/api/bank-change-requests');
+  const open = requests.filter((r) => r.status === 'requested');
+  $('#view').innerHTML = `
+    <div class="head"><div><h1>Bank account changes</h1><p class="muted">${open.length} waiting for a Finance Approver. Open a supplier to request a change.</p></div></div>
+    ${requests.length ? changesTable(requests, true) : '<div class="card empty">No bank account changes yet.</div>'}`;
+  bindDecisions(viewChanges);
 }
 
 /* ---------- Audit trail (VP-185) ---------- */

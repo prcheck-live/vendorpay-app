@@ -50,7 +50,7 @@ suppliersRouter.get('/:id', handle(async (req, res) => {
   if (!s.rowCount) throw notFound(`Supplier ${req.params.id}`);
   const accounts = await pool.query<AccountRow>('SELECT * FROM supplier_bank_accounts WHERE supplier_id = $1 ORDER BY created_at', [req.params.id]);
   const payments = await pool.query(
-    `SELECT count(*) FILTER (WHERE status = 'scheduled')::int AS scheduled, count(*) FILTER (WHERE status = 'released')::int AS released
+    `SELECT count(*) FILTER (WHERE status = 'scheduled')::int AS scheduled, count(*) FILTER (WHERE status = 'released')::int AS released, count(*) FILTER (WHERE status = 'on_hold')::int AS on_hold
      FROM payments WHERE supplier_id = $1`, [req.params.id]);
   const row = s.rows[0];
   res.json({
